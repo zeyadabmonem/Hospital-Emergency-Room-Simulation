@@ -21,5 +21,18 @@ public class Semaphore {
         notifyAll();
     }
 
-    public void tryAcquire(long timeoutMillis){}
+    public synchronized boolean tryAcquire(long timeoutMillis)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+
+        while (permits == 0) {
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) {
+                return false;
+            }
+            wait(remaining);
+        }
+        permits--;
+        return true;
+    }
 }
