@@ -24,7 +24,7 @@ public class Patient implements Runnable {
 
     public void leaveHospital(){
 
-        Hospital.logEvent("p"+id+" is lefte.");
+        Hospital.logEvent("p"+id+" is left.");
 
     }
 
