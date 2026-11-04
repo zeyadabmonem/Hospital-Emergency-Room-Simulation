@@ -10,21 +10,26 @@ public class Patient implements Runnable {
     public void run() {
 
         arrive();
-        enterWaitingRoom();
+        try {
+            enterWaitingRoom();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("Patient " + id + " was interrupted while waiting.");
+        }
     }
 
     public void arrive() {
-        Hospital.logEvent("p" + id + " is arrived.");
+        Hospital.logEvent("P" + id + " arrived.");
     }
 
-    public void enterWaitingRoom() {
-        
+    public void enterWaitingRoom() throws InterruptedException {
+
         waitingRoom.addPatient(this);
     }
 
     public void leaveHospital(){
 
-        Hospital.logEvent("p"+id+" is left.");
+        Hospital.logEvent("P" + id + " left.");
 
     }
 
