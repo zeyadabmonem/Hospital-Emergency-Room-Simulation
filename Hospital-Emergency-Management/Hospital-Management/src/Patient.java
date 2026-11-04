@@ -1,10 +1,12 @@
 public class Patient implements Runnable {
-    private int id;
-    private WaitingRoom waitingRoom;
+    private final int id;
+    private final WaitingRoom waitingRoom;
+    private final SimulationState simulationState;
 
-    public Patient(int id, WaitingRoom waitingRoom) {
+    public Patient(int id, WaitingRoom waitingRoom, SimulationState simulationState) {
         this.id = id;
         this.waitingRoom = waitingRoom;
+        this.simulationState = simulationState;
     }
     @Override 
     public void run() {
@@ -14,7 +16,8 @@ public class Patient implements Runnable {
             enterWaitingRoom();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            System.out.println("Patient " + id + " was interrupted while waiting.");
+            simulationState.cancel();
+            Hospital.logEvent("P" + id + " was interrupted while waiting.");
         }
     }
 
@@ -27,7 +30,7 @@ public class Patient implements Runnable {
         waitingRoom.addPatient(this);
     }
 
-    public void leaveHospital(){
+    public void leaveHospital() {
 
         Hospital.logEvent("P" + id + " left.");
 
