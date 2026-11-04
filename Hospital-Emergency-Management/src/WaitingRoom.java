@@ -1,3 +1,6 @@
+import java.util.Queue;
+import java.util.LinkedList;
+
 public class WaitingRoom {
     int capacity;
     Queue<Patient> patients;
