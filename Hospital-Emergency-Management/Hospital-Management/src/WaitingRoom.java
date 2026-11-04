@@ -1,18 +1,26 @@
 import java.util.Queue;
 import java.util.LinkedList;
+import java.util.HashSet;
+import java.util.Set;
 
 public class WaitingRoom {
-    int capacity;
-    Queue<Patient> patients;
-    Semaphore emptyslots;
-    Semaphore filledslots;
-    Semaphore mutex;
-    WaitingRoom(int capacity) {
+    private final int capacity;
+    private final Queue<Patient> patients;
+    private final Set<Integer> queuedPatientIds;
+    private final Semaphore emptySlots;
+    private final Semaphore filledSlots;
+    private final Semaphore mutex;
+
+    public WaitingRoom(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("Waiting room capacity must be positive.");
+        }
         this.capacity = capacity;
         patients = new LinkedList<>();
-        emptyslots=new Semaphore(capacity);
-        filledslots=new Semaphore(0);
-        mutex=new Semaphore(1);
+        queuedPatientIds = new HashSet<>();
+        emptySlots = new Semaphore(capacity, capacity);
+        filledSlots = new Semaphore(0, capacity);
+        mutex = new Semaphore(1, 1);
     }
     public  boolean isFull() throws InterruptedException{
         mutex.acquire();
@@ -34,47 +42,55 @@ public class WaitingRoom {
     }
 
     public void addPatient(Patient patient) throws InterruptedException  {
-        
-            emptyslots.acquire();
-            try{
-                mutex.acquire();
-            }
-            catch (InterruptedException e) {
-                emptyslots.release();   
-                throw e;
-            }
-            
-        try{
-            patients.add(patient);
-            System.out.println("p"+patient.getId()+" entered the waiting room.");
+        if (!emptySlots.tryAcquire(0)) {
+            Hospital.logEvent("The waiting room is full.");
+            Hospital.logEvent("P" + patient.getId() + " is waiting outside for an available seat.");
+            emptySlots.acquire();
         }
-        finally{
+
+        try {
+            mutex.acquire();
+        } catch (InterruptedException e) {
+            emptySlots.release();
+            throw e;
+        }
+
+        try {
+            if (!queuedPatientIds.add(patient.getId())) {
+                emptySlots.release();
+                throw new IllegalStateException("Patient " + patient.getId() + " is already in the waiting room.");
+            }
+            patients.add(patient);
+            Hospital.logEvent("P" + patient.getId() + " entered the waiting room.");
+        } finally {
             mutex.release();
         }
 
-        filledslots.release();
+        filledSlots.release();
 
     }
 
     public Patient getNextPatient() throws InterruptedException {
-        filledslots.acquire();
-        try{
+        filledSlots.acquire();
+        try {
             mutex.acquire();
-        }
-        catch(InterruptedException e){
-            filledslots.release();
+        } catch (InterruptedException e) {
+            filledSlots.release();
             throw e;
         }
-        Patient next_Patient;
-        try{
-         next_Patient=patients.poll();
-        }
-        finally{
+
+        Patient nextPatient;
+        try {
+            nextPatient = patients.poll();
+            if (nextPatient == null) {
+                throw new IllegalStateException("Waiting room semaphore and queue are inconsistent.");
+            }
+            queuedPatientIds.remove(nextPatient.getId());
+        } finally {
             mutex.release();
         }
-        
-        emptyslots.release();
-        return  next_Patient;
-       
+
+        emptySlots.release();
+        return nextPatient;
     }
 }
