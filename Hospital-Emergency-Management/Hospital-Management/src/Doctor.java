@@ -5,11 +5,14 @@ public class Doctor implements Runnable {
     private final int id;
     private final WaitingRoom waitingRoom;
     private final TreatmentRooms treatmentRooms;
+    private final SimulationState simulationState;
 
-    public Doctor(int id, WaitingRoom waitingRoom, TreatmentRooms treatmentRooms) {
+    public Doctor(int id, WaitingRoom waitingRoom, TreatmentRooms treatmentRooms,
+                  SimulationState simulationState) {
         this.id = id;
         this.waitingRoom = waitingRoom;
         this.treatmentRooms = treatmentRooms;
+        this.simulationState = simulationState;
     }
 
     @Override
@@ -17,61 +20,55 @@ public class Doctor implements Runnable {
 
         Hospital.logEvent("Doctor " + id + " is available.");
 
-        while (!Thread.currentThread().isInterrupted()) {
+        Patient patient = null;
+        while (!Thread.currentThread().isInterrupted() && !simulationState.isCancelled()) {
 
             try {
-                // Get the next patient
-                Patient patient = takePatient();
+                patient = takePatient();
 
                 Hospital.logEvent(
-                    "Doctor " + id + " received Patient " + patient.getId()
+                    "Doctor " + id + " is assigned to P" + patient.getId()
                 );
 
-                // Try to acquire a treatment room within 3 seconds
+                Hospital.logEvent("Doctor " + id + " is trying to acquire a treatment room.");
                 boolean roomAcquired = treatmentRooms.tryAcquireRoom(3000);
 
-                if (Thread.currentThread().isInterrupted()) {
-                    break;
-                }
-
-                // If no room is available, return the patient
                 if (!roomAcquired) {
-
                     Hospital.logEvent(
-                        "Doctor " + id + " couldn't get a treatment room for Patient "
-                        + patient.getId() + ". Returning patient to waiting room."
+                        "Doctor " + id + " could not acquire a treatment room."
                     );
-
+                    Hospital.logEvent("Doctor " + id + " is sending P" + patient.getId()
+                        + " back to the waiting room.");
                     waitingRoom.addPatient(patient);
+                    patient = null;
+                    Hospital.logEvent("Doctor " + id + " is now available.");
 
                     continue;
                 }
 
-                // Treat the patient
                 try {
+                    Hospital.logEvent("Doctor " + id + " acquired a treatment room.");
                     treatPatient(patient);
                 } finally {
-                    // Always release the room after successful acquisition
                     treatmentRooms.releaseRoom();
-
-                    Hospital.logEvent(
-                        "Doctor " + id + " released the treatment room."
-                    );
+                    Hospital.logEvent("Doctor " + id + " released the treatment room.");
                 }
 
-                // Patient leaves after treatment
                 patient.leaveHospital();
-
-                // Notify Hospital that one patient has completed treatment
-                Hospital.treated.release();
+                simulationState.patientTreated();
+                patient = null;
+                Hospital.logEvent("Doctor " + id + " is now available.");
 
             } catch (InterruptedException e) {
-
                 Thread.currentThread().interrupt();
-
-                Hospital.logEvent(
-                    "Doctor " + id + " stopped working."
-                );
+                if (!simulationState.isShutdownRequested()) {
+                    simulationState.cancel();
+                    if (patient != null) {
+                        Hospital.logEvent("Doctor " + id + " was interrupted while handling P"
+                            + patient.getId() + ". Simulation cancelled.");
+                    }
+                }
+                Hospital.logEvent("Doctor " + id + " stopped working.");
 
                 break;
             }
@@ -85,7 +82,7 @@ public class Doctor implements Runnable {
     private void treatPatient(Patient patient) throws InterruptedException {
 
         Hospital.logEvent(
-            "Doctor " + id + " started treating Patient " + patient.getId()
+            "Doctor " + id + " begins treating P" + patient.getId()
         );
 
         // Random treatment duration between 1 and 5 seconds
@@ -94,7 +91,7 @@ public class Doctor implements Runnable {
         Thread.sleep(treatmentTime);
 
         Hospital.logEvent(
-            "Doctor " + id + " finished treating Patient " + patient.getId()
+            "Doctor " + id + " finished treating P" + patient.getId()
         );
     }
 }
