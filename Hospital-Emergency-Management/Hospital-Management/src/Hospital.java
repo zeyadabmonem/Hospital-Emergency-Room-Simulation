@@ -7,45 +7,69 @@ public class Hospital {
     private TreatmentRooms treatmentRooms;
     private List<Doctor> doctors;
     private List<Patient> patients;
+    private SimulationState simulationState;
 
-    private int WaitingRoomCapacity;
-    private int NumofPatient;
-    private int NumofDoctors;
+    private int waitingRoomCapacity;
+    private int numberOfPatients;
+    private int numberOfDoctors;
 
     private List<Thread> doctorThreads;
     private List<Thread> patientThreads;
 
-    public static Semaphore treated = new Semaphore(0);
-
     public void getUserInput() {
         Scanner input = new Scanner(System.in);
+        waitingRoomCapacity = readPositiveInt(input, "Enter waiting room capacity:");
+        numberOfDoctors = readPositiveInt(input, "Enter number of doctors:");
+        numberOfPatients = readNonNegativeInt(input, "Enter number of patients:");
+    }
 
-        System.out.println("Enter Waiting room capacity:");
-        WaitingRoomCapacity = input.nextInt();
+    private int readPositiveInt(Scanner input, String prompt) {
+        while (true) {
+            System.out.println(prompt);
+            if (input.hasNextInt()) {
+                int value = input.nextInt();
+                if (value > 0) {
+                    return value;
+                }
+            } else {
+                input.next();
+            }
+            System.out.println("Please enter a positive integer.");
+        }
+    }
 
-        System.out.println("Enter Number of doctors:");
-        NumofDoctors = input.nextInt();
-
-        System.out.println("Number of patients:");
-        NumofPatient = input.nextInt();
+    private int readNonNegativeInt(Scanner input, String prompt) {
+        while (true) {
+            System.out.println(prompt);
+            if (input.hasNextInt()) {
+                int value = input.nextInt();
+                if (value >= 0) {
+                    return value;
+                }
+            } else {
+                input.next();
+            }
+            System.out.println("Please enter zero or a positive integer.");
+        }
     }
 
     public void initializeHospital() {
-        waitingRoom = new WaitingRoom(WaitingRoomCapacity);
+        waitingRoom = new WaitingRoom(waitingRoomCapacity);
         treatmentRooms = new TreatmentRooms();
+        simulationState = new SimulationState();
         doctors = new ArrayList<>();
         patients = new ArrayList<>();
         doctorThreads = new ArrayList<>();
         patientThreads = new ArrayList<>();
 
-        for (int i = 1; i <= NumofDoctors; i++) {
-            Doctor doctor = new Doctor(i, waitingRoom, treatmentRooms);
+        for (int i = 1; i <= numberOfDoctors; i++) {
+            Doctor doctor = new Doctor(i, waitingRoom, treatmentRooms, simulationState);
 
             doctors.add(doctor);
             doctorThreads.add(new Thread(doctor));
         }
-        for (int i = 1; i <= NumofPatient; i++) {
-            Patient patient = new Patient(i, waitingRoom);
+        for (int i = 1; i <= numberOfPatients; i++) {
+            Patient patient = new Patient(i, waitingRoom, simulationState);
 
             patients.add(patient);
             patientThreads.add(new Thread(patient));
@@ -60,46 +84,73 @@ public class Hospital {
         
         System.out.println();
 
-        for (Thread Doctorthread : doctorThreads) {
-            Doctorthread.start();
-
-        }
-
-        for (Thread patientThread : patientThreads) {
-            patientThread.start();
-
-        }
-
-        try {
-            for (Thread patientThread : patientThreads) {
-                patientThread.join();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        try {
-            for (int i = 0; i < NumofPatient; i++) {
-                treated.acquire();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        if (numberOfPatients == 0) {
+            System.out.println("All patients have been treated.");
+            System.out.println("Simulation completed.");
+            return;
         }
 
         for (Thread doctorThread : doctorThreads) {
-            doctorThread.interrupt();
+            doctorThread.start();
+        }
+        for (Thread patientThread : patientThreads) {
+            patientThread.start();
         }
 
+        boolean completed = false;
         try {
-            for (Thread doctorThread : doctorThreads) {
-                doctorThread.join();
+            if (joinPatients()) {
+                completed = simulationState.awaitAllPatients(numberOfPatients);
             }
         } catch (InterruptedException e) {
+            simulationState.cancel();
             Thread.currentThread().interrupt();
+        } finally {
+            simulationState.requestShutdown();
+            for (Thread patientThread : patientThreads) {
+                patientThread.interrupt();
+            }
+            for (Thread doctorThread : doctorThreads) {
+                doctorThread.interrupt();
+            }
+            joinDoctors();
         }
 
-        System.out.println("All patients have been treated.");
-        System.out.println("Simulation completed.");
+        if (completed) {
+            System.out.println("All patients have been treated.");
+            System.out.println("Simulation completed.");
+        } else {
+            System.out.println("Simulation cancelled before all patients were treated.");
+        }
+    }
+
+    private boolean joinPatients() throws InterruptedException {
+        for (Thread patientThread : patientThreads) {
+            while (patientThread.isAlive()) {
+                patientThread.join(100);
+                if (simulationState.isCancelled()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void joinDoctors() {
+        boolean interrupted = false;
+        for (Thread doctorThread : doctorThreads) {
+            while (true) {
+                try {
+                    doctorThread.join();
+                    break;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public static synchronized void logEvent(String message) {
